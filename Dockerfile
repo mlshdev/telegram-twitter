@@ -47,7 +47,7 @@ COPY --from=ffmpeg-downloader /ffmpeg/bin/ffprobe /usr/local/bin/ffprobe
 WORKDIR /workspace
 
 COPY pyproject.toml /workspace/
-RUN uv sync --no-dev
+RUN uv pip install --system -r pyproject.toml
 
 COPY main.py /workspace/
 
