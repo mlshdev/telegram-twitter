@@ -1,0 +1,17 @@
+.env
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.mp4
+*.mkv
+*.webm
+*.part
+*.temp
+*.tmp
+*.log
+.venv/
+cookies.twitter.txt
+cookies-twitter.txt
+cookies*
+uv.lock
