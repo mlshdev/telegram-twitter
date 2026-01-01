@@ -71,7 +71,7 @@ def build_ydl_opts(output_dir: Path, twitter_api: str | None) -> dict:
         ydl_opts["ffmpeg_location"] = "/usr/local/bin"
 
     if Path("/usr/local/bin/deno").exists():
-        ydl_opts["js_runtimes"] = ["deno:/usr/local/bin/deno"]
+        ydl_opts["js_runtimes"] = {"deno": {"path": "/usr/local/bin/deno"}}
 
     if os.getenv("YTDLP_FIX_ASPECT_RATIO", "").lower() in {"1", "true", "yes"}:
         ydl_opts["postprocessor_args"] = [
