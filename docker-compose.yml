@@ -18,7 +18,6 @@ services:
       - YTDLP_TWITTER_API=${YTDLP_TWITTER_API-graphql}
       - YTDLP_TWITTER_API_ORDER=${YTDLP_TWITTER_API_ORDER-graphql,legacy,syndication}
       - YTDLP_USER_AGENT=
-      - YTDLP_FIX_ASPECT_RATIO=1
     volumes:
       - ./data:/data:Z
     labels:

@@ -92,12 +92,6 @@ def build_ydl_opts(output_dir: Path, twitter_api: str | None) -> dict:
     if Path("/usr/local/bin/deno").exists():
         ydl_opts["js_runtimes"] = {"deno": {"path": "/usr/local/bin/deno"}}
 
-    if os.getenv("YTDLP_FIX_ASPECT_RATIO", "").lower() in {"1", "true", "yes"}:
-        ydl_opts["postprocessor_args"] = [
-            "-bsf:v",
-            "h264_metadata=sample_aspect_ratio=1/1",
-        ]
-
     cookies_file = os.getenv("YTDLP_COOKIES_FILE")
     if cookies_file:
         ydl_opts["cookiefile"] = cookies_file
@@ -128,6 +122,11 @@ def transcode_to_hevc(path: Path, output_dir: Path) -> Path:
         raise RuntimeError("ffmpeg not found for HEVC post-processing")
 
     output_path = output_dir / f"{path.stem}.hevc.mp4"
+    
+    # Build video filter chain - always fix aspect ratio for consistent output
+    # setsar=1 makes pixels square, setdar=0 forces recalculation from dimensions
+    vf_filters = "setsar=1"
+    
     cmd = [
         ffmpeg,
         "-y",
@@ -135,6 +134,8 @@ def transcode_to_hevc(path: Path, output_dir: Path) -> Path:
         str(path),
         "-map",
         "0",
+        "-vf",
+        vf_filters,
         "-c:v",
         "libx265",
         "-pix_fmt",
@@ -149,12 +150,9 @@ def transcode_to_hevc(path: Path, output_dir: Path) -> Path:
         "copy",
         "-movflags",
         "+faststart",
+        str(output_path),
     ]
 
-    if os.getenv("YTDLP_FIX_ASPECT_RATIO", "").lower() in {"1", "true", "yes"}:
-        cmd.extend(["-vf", "setsar=1"])
-
-    cmd.append(str(output_path))
     logger.debug(f"Running ffmpeg command: {' '.join(cmd)}")
     result = subprocess.run(cmd, check=True, capture_output=True, text=True)
     logger.debug(f"ffmpeg stdout: {result.stdout}")
