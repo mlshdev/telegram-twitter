@@ -6,7 +6,6 @@ import re
 import sys
 import tempfile
 import logging
-import signal
 import json
 from pathlib import Path
 from urllib.parse import urlparse
@@ -273,10 +272,6 @@ def download_with_yt_dlp(url: str, output_dir: Path) -> Path:
     raise RuntimeError("Download failed")
 
 
-# Global bot instance (set in main)
-bot: Bot | None = None
-
-
 async def start_handler(message: Message) -> None:
     logger.debug(f"Received /start command from message: {message}")
     await message.answer(
@@ -389,15 +384,8 @@ async def main() -> None:
     dp.message.register(start_handler, Command("start"))
     dp.message.register(handle_message, F.text & ~F.text.startswith("/"))
 
-    # Graceful shutdown handling
-    loop = asyncio.get_event_loop()
-
-    def signal_handler(signum, frame):
-        logger.info(f"Received signal {signum}, shutting down gracefully...")
-        loop.stop()
-
-    signal.signal(signal.SIGTERM, signal_handler)
-    signal.signal(signal.SIGINT, signal_handler)
+    # Graceful shutdown handling is built into aiogram's start_polling
+    # It will handle SIGINT and SIGTERM automatically
 
     logger.info("Starting polling")
     try:

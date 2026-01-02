@@ -25,7 +25,6 @@ trap cleanup SIGTERM SIGINT
 # Check if we should start the local Telegram Bot API server
 if [ -n "$TELEGRAM_API_ID" ] && [ -n "$TELEGRAM_API_HASH" ]; then
     echo "Starting local Telegram Bot API server..."
-    echo "API ID: $TELEGRAM_API_ID"
     echo "Port: $TELEGRAM_LOCAL_API_PORT"
     
     # Start telegram-bot-api server in background
