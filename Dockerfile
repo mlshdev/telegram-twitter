@@ -96,14 +96,15 @@ VOLUME /var/lib/telegram-bot-api
 
 USER 1000
 
-# Expose Telegram Bot API server port
+# Expose Telegram Bot API server ports (8081 for API, 8082 for stats)
 EXPOSE 8081
+EXPOSE 8082
 
 # OCI-compliant signal handling (SIGTERM for graceful shutdown)
 STOPSIGNAL SIGTERM
 
 # Healthcheck: check if local API server is running (if enabled) or if we can reach public Telegram API
 HEALTHCHECK --interval=60s --timeout=10s --start-period=60s --retries=3 \
-  CMD bash -c 'if [ -n "$TELEGRAM_API_ID" ] && [ -n "$TELEGRAM_API_HASH" ]; then nc -z localhost ${TELEGRAM_LOCAL_API_PORT:-8081}; else python -c "import socket; s=socket.socket(); s.settimeout(5); s.connect((\"api.telegram.org\", 443)); s.close()"; fi'
+  CMD bash -c 'if [ -n "$TELEGRAM_API_ID" ] && [ -n "$TELEGRAM_API_HASH" ]; then nc -z localhost ${TELEGRAM_HTTP_PORT:-8081}; else python -c "import socket; s=socket.socket(); s.settimeout(5); s.connect((\"api.telegram.org\", 443)); s.close()"; fi'
 
 ENTRYPOINT ["/app/entrypoint.sh"]
