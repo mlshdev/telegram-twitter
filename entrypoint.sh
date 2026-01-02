@@ -7,6 +7,7 @@ TELEGRAM_API_ID="${TELEGRAM_API_ID:-}"
 TELEGRAM_API_HASH="${TELEGRAM_API_HASH:-}"
 
 # Server network configuration
+# Priority: TELEGRAM_HTTP_PORT > TELEGRAM_LOCAL_API_PORT (backward compat) > 8081 (default)
 TELEGRAM_HTTP_PORT="${TELEGRAM_HTTP_PORT:-${TELEGRAM_LOCAL_API_PORT:-8081}}"
 TELEGRAM_HTTP_IP_ADDRESS="${TELEGRAM_HTTP_IP_ADDRESS:-}"
 
@@ -64,7 +65,7 @@ if [ -n "$TELEGRAM_API_ID" ] && [ -n "$TELEGRAM_API_HASH" ]; then
     )
     
     # Add optional arguments based on environment variables
-    [ -n "$TELEGRAM_LOCAL" ] && CMD_ARGS+=("--local")
+    [ "$TELEGRAM_LOCAL" != "0" ] && CMD_ARGS+=("--local")
     [ -n "$TELEGRAM_STAT" ] && CMD_ARGS+=("--http-stat-port=8082")
     [ -n "$TELEGRAM_FILTER" ] && CMD_ARGS+=("--filter=$TELEGRAM_FILTER")
     [ -n "$TELEGRAM_MAX_WEBHOOK_CONNECTIONS" ] && CMD_ARGS+=("--max-webhook-connections=$TELEGRAM_MAX_WEBHOOK_CONNECTIONS")
