@@ -65,7 +65,7 @@ USER 1000
 # OCI-compliant signal handling (SIGTERM for graceful shutdown)
 STOPSIGNAL SIGTERM
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD python -c "import sys; sys.exit(0)"
+HEALTHCHECK --interval=60s --timeout=10s --start-period=30s --retries=3 \
+  CMD python -c "import socket; s=socket.socket(); s.settimeout(5); s.connect(('api.telegram.org', 443)); s.close()"
 
 CMD ["python", "-u", "main.py"]

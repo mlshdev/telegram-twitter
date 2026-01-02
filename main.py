@@ -5,6 +5,7 @@ import re
 import sys
 import tempfile
 import logging
+import signal
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -25,6 +26,7 @@ logging.basicConfig(
     level=logging.DEBUG,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     handlers=[logging.StreamHandler(sys.stdout)],
+    force=True,
 )
 
 # Set all loggers to DEBUG
@@ -63,7 +65,9 @@ def is_twitter_url(url: str) -> bool:
         host = urlparse(url).netloc.lower()
     except Exception:
         return False
-    return host.endswith("twitter.com") or host.endswith("x.com")
+    # Handle www. prefix and various Twitter/X domains
+    host = host.removeprefix("www.")
+    return host in ("twitter.com", "x.com", "mobile.twitter.com", "mobile.x.com")
 
 
 def build_ydl_opts(output_dir: Path, twitter_api: str | None) -> dict:
@@ -93,8 +97,12 @@ def build_ydl_opts(output_dir: Path, twitter_api: str | None) -> dict:
         ydl_opts["js_runtimes"] = {"deno": {"path": "/usr/local/bin/deno"}}
 
     cookies_file = os.getenv("YTDLP_COOKIES_FILE")
-    if cookies_file:
-        ydl_opts["cookiefile"] = cookies_file
+    if cookies_file and Path(cookies_file).exists():
+        # Copy cookies to temp dir so yt-dlp can write updates (SELinux/rootless friendly)
+        temp_cookies = output_dir / "cookies.txt"
+        shutil.copy2(cookies_file, temp_cookies)
+        ydl_opts["cookiefile"] = str(temp_cookies)
+        logger.debug(f"Copied cookies from {cookies_file} to {temp_cookies}")
 
     if twitter_api:
         ydl_opts["extractor_args"] = {"twitter": {"api": [twitter_api]}}
@@ -120,6 +128,16 @@ def transcode_to_hevc(path: Path, output_dir: Path) -> Path:
     ffmpeg = shutil.which("ffmpeg") or "/usr/local/bin/ffmpeg"
     if not Path(ffmpeg).exists():
         raise RuntimeError("ffmpeg not found for HEVC post-processing")
+
+    # Verify input file exists and is readable
+    if not path.exists():
+        raise RuntimeError(f"Input file does not exist: {path}")
+    
+    input_size = path.stat().st_size
+    logger.debug(f"Input file size: {input_size} bytes")
+    
+    if input_size == 0:
+        raise RuntimeError(f"Input file is empty: {path}")
 
     output_path = output_dir / f"{path.stem}.hevc.mp4"
     
@@ -154,10 +172,20 @@ def transcode_to_hevc(path: Path, output_dir: Path) -> Path:
     ]
 
     logger.debug(f"Running ffmpeg command: {' '.join(cmd)}")
-    result = subprocess.run(cmd, check=True, capture_output=True, text=True)
-    logger.debug(f"ffmpeg stdout: {result.stdout}")
-    logger.debug(f"ffmpeg stderr: {result.stderr}")
-    logger.info(f"HEVC transcode complete: {output_path}")
+    try:
+        result = subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=600)
+        logger.debug(f"ffmpeg stdout: {result.stdout}")
+        logger.debug(f"ffmpeg stderr: {result.stderr}")
+    except subprocess.TimeoutExpired:
+        raise RuntimeError("ffmpeg transcode timed out after 10 minutes")
+    except subprocess.CalledProcessError as e:
+        logger.error(f"ffmpeg failed with stderr: {e.stderr}")
+        raise RuntimeError(f"ffmpeg transcode failed: {e.stderr[:500]}")
+    
+    if not output_path.exists():
+        raise RuntimeError(f"ffmpeg did not produce output file: {output_path}")
+    
+    logger.info(f"HEVC transcode complete: {output_path} ({output_path.stat().st_size} bytes)")
     return output_path
 
 
@@ -237,11 +265,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     for url in urls:
         logger.info(f"Processing URL: {url}")
         status = await message.reply_text(f"Downloading: {url}")
-        await context.bot.send_chat_action(
-            chat_id=message.chat_id, action=ChatAction.UPLOAD_VIDEO
-        )
-
+        
         try:
+            await context.bot.send_chat_action(
+                chat_id=message.chat_id, action=ChatAction.UPLOAD_VIDEO
+            )
+
             with tempfile.TemporaryDirectory(prefix="yt-dlp-") as tmp_dir:
                 logger.debug(f"Created temp directory: {tmp_dir}")
                 path = download_with_yt_dlp(url, Path(tmp_dir))
@@ -251,17 +280,31 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     await status.edit_text(f"Download failed: {url}")
                     continue
 
-                logger.info(f"Sending video: {path} (size: {path.stat().st_size} bytes)")
+                file_size = path.stat().st_size
+                logger.info(f"Sending video: {path} (size: {file_size} bytes)")
+                
+                # Telegram limit is 50MB for bots
+                if file_size > 50 * 1024 * 1024:
+                    logger.warning(f"File too large for Telegram: {file_size} bytes")
+                    await status.edit_text(f"Video too large ({file_size // 1024 // 1024}MB > 50MB limit)")
+                    continue
+                
                 with path.open("rb") as video_file:
                     await context.bot.send_video(
                         chat_id=message.chat_id,
                         video=video_file,
+                        read_timeout=120,
+                        write_timeout=120,
+                        connect_timeout=30,
                     )
                 await status.delete()
                 logger.info(f"Successfully sent video for URL: {url}")
         except Exception as exc:
             logger.error(f"Error processing URL {url}: {exc}", exc_info=True)
-            await status.edit_text(f"Error: {exc}")
+            try:
+                await status.edit_text(f"Error: {exc}")
+            except Exception as edit_exc:
+                logger.error(f"Failed to edit status message: {edit_exc}")
 
 
 def main() -> None:
@@ -283,8 +326,16 @@ def main() -> None:
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
+    # Graceful shutdown handler
+    def signal_handler(signum, frame):
+        logger.info(f"Received signal {signum}, shutting down gracefully...")
+        sys.exit(0)
+
+    signal.signal(signal.SIGTERM, signal_handler)
+    signal.signal(signal.SIGINT, signal_handler)
+
     logger.info("Starting polling")
-    app.run_polling()
+    app.run_polling(drop_pending_updates=True)
 
 
 if __name__ == "__main__":
