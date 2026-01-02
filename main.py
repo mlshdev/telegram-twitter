@@ -374,7 +374,6 @@ async def main() -> None:
         session = AiohttpSession(api=api_server)
 
     logger.debug("Building bot instance")
-    global bot
     bot = Bot(token=token, session=session)
 
     # Create dispatcher
