@@ -157,10 +157,11 @@ def get_video_info(path: Path) -> dict:
 
 
 def transcode_to_hevc(path: Path, output_dir: Path) -> Path:
-    logger.debug(f"Starting HEVC transcode for {path}")
+    """Lightweight remux with aspect ratio fix - minimal CPU usage."""
+    logger.debug(f"Starting video processing for {path}")
     ffmpeg = shutil.which("ffmpeg") or "/usr/local/bin/ffmpeg"
     if not Path(ffmpeg).exists():
-        raise RuntimeError("ffmpeg not found for HEVC post-processing")
+        raise RuntimeError("ffmpeg not found")
 
     # Verify input file exists and is readable
     if not path.exists():
@@ -181,77 +182,56 @@ def transcode_to_hevc(path: Path, output_dir: Path) -> Path:
     
     logger.info(f"Input video: {width}x{height}, SAR={sar}, DAR={dar}")
 
-    output_path = output_dir / f"{path.stem}.hevc.mp4"
+    output_path = output_dir / f"{path.stem}.fixed.mp4"
     
-    # Build video filter chain
-    # Handle SAR issues that cause aspect ratio problems
-    vf_parts = []
-    needs_scale = False
-    
-    # Parse SAR to check if it's not 1:1
+    # Check if SAR needs fixing
+    needs_sar_fix = False
     if sar and sar not in ("1:1", "N/A", "0:1", ""):
         try:
             sar_parts = sar.split(":")
             if len(sar_parts) == 2:
                 sar_num, sar_den = int(sar_parts[0]), int(sar_parts[1])
                 if sar_den > 0 and sar_num != sar_den:
-                    needs_scale = True
-                    logger.warning(f"Non-square SAR detected ({sar}), will scale to correct")
+                    needs_sar_fix = True
+                    logger.warning(f"Non-square SAR detected ({sar})")
         except (ValueError, ZeroDivisionError):
             pass
     
-    if needs_scale:
-        # Scale to correct the actual pixels based on SAR
-        # trunc(...*2)*2 ensures dimensions are even (required for most codecs)
-        vf_parts.append("scale='trunc(iw*sar/2)*2:trunc(ih/2)*2'")
-    
-    # Always set SAR to 1:1 (square pixels) at the end
-    vf_parts.append("setsar=1")
-    
-    vf_filters = ",".join(vf_parts)
-    logger.debug(f"Video filter chain: {vf_filters}")
-    
-    cmd = [
-        ffmpeg,
-        "-y",
-        "-i",
-        str(path),
-        "-map",
-        "0",
-        "-vf",
-        vf_filters,
-        "-c:v",
-        "libx265",
-        "-pix_fmt",
-        "yuv420p",
-        "-x265-params",
-        "lossless=1:profile=main",
-        "-tag:v",
-        "hvc1",
-        "-c:a",
-        "copy",
-        "-c:s",
-        "copy",
-        "-movflags",
-        "+faststart",
-        str(output_path),
-    ]
+    if needs_sar_fix:
+        # Only re-encode if SAR is wrong - use fast preset
+        logger.info("Re-encoding with SAR correction (using ultrafast preset)")
+        cmd = [
+            ffmpeg, "-y", "-i", str(path),
+            "-vf", "scale='trunc(iw*sar/2)*2:trunc(ih/2)*2',setsar=1",
+            "-c:v", "libx264", "-preset", "ultrafast", "-crf", "18",
+            "-c:a", "copy",
+            "-movflags", "+faststart",
+            str(output_path),
+        ]
+    else:
+        # No SAR issue - just remux (copy streams, no re-encoding)
+        logger.info("SAR is correct, remuxing only (no re-encoding)")
+        cmd = [
+            ffmpeg, "-y", "-i", str(path),
+            "-c", "copy",
+            "-movflags", "+faststart",
+            str(output_path),
+        ]
 
     logger.debug(f"Running ffmpeg command: {' '.join(cmd)}")
     try:
-        result = subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=600)
-        logger.debug(f"ffmpeg stdout: {result.stdout}")
+        result = subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=300)
         logger.debug(f"ffmpeg stderr: {result.stderr}")
     except subprocess.TimeoutExpired:
-        raise RuntimeError("ffmpeg transcode timed out after 10 minutes")
+        raise RuntimeError("ffmpeg timed out after 5 minutes")
     except subprocess.CalledProcessError as e:
-        logger.error(f"ffmpeg failed with stderr: {e.stderr}")
-        raise RuntimeError(f"ffmpeg transcode failed: {e.stderr[:500]}")
+        logger.error(f"ffmpeg failed: {e.stderr}")
+        raise RuntimeError(f"ffmpeg failed: {e.stderr[:500]}")
     
     if not output_path.exists():
-        raise RuntimeError(f"ffmpeg did not produce output file: {output_path}")
+        raise RuntimeError(f"ffmpeg did not produce output file")
     
-    logger.info(f"HEVC transcode complete: {output_path} ({output_path.stat().st_size} bytes)")
+    logger.info(f"Processing complete: {output_path} ({output_path.stat().st_size} bytes)")
     return output_path
 
 
