@@ -9,13 +9,13 @@ services:
     environment:
       - BOT_TOKEN=
       - ALLOWLIST_USER_IDS=
-      - YTDLP_COOKIES_FILE=/workspace/cookies.txt
+      - YTDLP_COOKIES_FILE=/data/cookies.txt
       - YTDLP_TWITTER_API=${YTDLP_TWITTER_API-graphql}
       - YTDLP_TWITTER_API_ORDER=${YTDLP_TWITTER_API_ORDER-graphql,legacy,syndication}
       - YTDLP_USER_AGENT=
       - YTDLP_FIX_ASPECT_RATIO=1
     volumes:
-      - ./workspace:/workspace:Z
+      - ./data:/data:Z
     labels:
       - "traefik.enable=false"
       - "io.containers.autoupdate=registry"

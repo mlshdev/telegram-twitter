@@ -39,26 +39,26 @@ ENV PYTHONUNBUFFERED=1 \
     UV_LINK_MODE=copy \
     UV_PYTHON_DOWNLOADS=never \
     PATH="/usr/local/bin:${PATH}" \
-    HOME=/workspace
+    HOME=/home/app
 
 COPY --from=deno-bin /deno /usr/local/bin/deno
 COPY --from=ffmpeg-downloader /ffmpeg/bin/ffmpeg /usr/local/bin/ffmpeg
 COPY --from=ffmpeg-downloader /ffmpeg/bin/ffprobe /usr/local/bin/ffprobe
 
+# Create non-root user first for Podman rootless + SELinux
+RUN useradd --create-home --uid 1000 --home-dir /home/app --shell /usr/sbin/nologin app && \
+    mkdir -p /app /data && \
+    chown -R 1000:1000 /app /data /home/app && \
+    chmod 755 /data
+
 WORKDIR /app
 
-COPY pyproject.toml /app/
+COPY --chown=1000:1000 pyproject.toml /app/
 RUN uv pip install --system -r pyproject.toml
 
-COPY main.py /app/
+COPY --chown=1000:1000 main.py /app/
 
-# Create non-root user and writable work directory for Podman rootless + SELinux
-RUN useradd --create-home --uid 1000 --shell /usr/sbin/nologin app && \
-    mkdir -p /workspace && \
-    chown -R 1000:1000 /app /workspace && \
-    chmod 755 /workspace
-
-VOLUME /workspace
+VOLUME /data
 
 USER 1000
 
