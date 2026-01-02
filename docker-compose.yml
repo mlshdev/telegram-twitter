@@ -6,6 +6,11 @@ services:
     user: "1000:1000"
     security_opt:
       - label=disable
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
     environment:
       - BOT_TOKEN=
       - ALLOWLIST_USER_IDS=
