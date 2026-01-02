@@ -6,6 +6,7 @@ import sys
 import tempfile
 import logging
 import signal
+import json
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -123,6 +124,38 @@ def normalize_download_path(filename: str) -> Path:
     return path
 
 
+def get_video_info(path: Path) -> dict:
+    """Get video stream info using ffprobe."""
+    ffprobe = shutil.which("ffprobe") or "/usr/local/bin/ffprobe"
+    if not Path(ffprobe).exists():
+        raise RuntimeError("ffprobe not found")
+    
+    cmd = [
+        ffprobe,
+        "-v", "error",
+        "-select_streams", "v:0",
+        "-show_entries", "stream=width,height,sample_aspect_ratio,display_aspect_ratio",
+        "-of", "json",
+        str(path),
+    ]
+    
+    logger.debug(f"Running ffprobe: {' '.join(cmd)}")
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+    
+    if result.returncode != 0:
+        logger.error(f"ffprobe failed: {result.stderr}")
+        return {}
+    
+    try:
+        data = json.loads(result.stdout)
+        stream = data.get("streams", [{}])[0]
+        logger.debug(f"Video info: {stream}")
+        return stream
+    except (json.JSONDecodeError, IndexError) as e:
+        logger.error(f"Failed to parse ffprobe output: {e}")
+        return {}
+
+
 def transcode_to_hevc(path: Path, output_dir: Path) -> Path:
     logger.debug(f"Starting HEVC transcode for {path}")
     ffmpeg = shutil.which("ffmpeg") or "/usr/local/bin/ffmpeg"
@@ -139,11 +172,44 @@ def transcode_to_hevc(path: Path, output_dir: Path) -> Path:
     if input_size == 0:
         raise RuntimeError(f"Input file is empty: {path}")
 
+    # Probe video to check for SAR issues
+    video_info = get_video_info(path)
+    width = video_info.get("width", 0)
+    height = video_info.get("height", 0)
+    sar = video_info.get("sample_aspect_ratio", "1:1")
+    dar = video_info.get("display_aspect_ratio", "")
+    
+    logger.info(f"Input video: {width}x{height}, SAR={sar}, DAR={dar}")
+
     output_path = output_dir / f"{path.stem}.hevc.mp4"
     
-    # Build video filter chain - always fix aspect ratio for consistent output
-    # setsar=1 makes pixels square, setdar=0 forces recalculation from dimensions
-    vf_filters = "setsar=1"
+    # Build video filter chain
+    # Handle SAR issues that cause aspect ratio problems
+    vf_parts = []
+    needs_scale = False
+    
+    # Parse SAR to check if it's not 1:1
+    if sar and sar not in ("1:1", "N/A", "0:1", ""):
+        try:
+            sar_parts = sar.split(":")
+            if len(sar_parts) == 2:
+                sar_num, sar_den = int(sar_parts[0]), int(sar_parts[1])
+                if sar_den > 0 and sar_num != sar_den:
+                    needs_scale = True
+                    logger.warning(f"Non-square SAR detected ({sar}), will scale to correct")
+        except (ValueError, ZeroDivisionError):
+            pass
+    
+    if needs_scale:
+        # Scale to correct the actual pixels based on SAR
+        # trunc(...*2)*2 ensures dimensions are even (required for most codecs)
+        vf_parts.append("scale='trunc(iw*sar/2)*2:trunc(ih/2)*2'")
+    
+    # Always set SAR to 1:1 (square pixels) at the end
+    vf_parts.append("setsar=1")
+    
+    vf_filters = ",".join(vf_parts)
+    logger.debug(f"Video filter chain: {vf_filters}")
     
     cmd = [
         ffmpeg,
