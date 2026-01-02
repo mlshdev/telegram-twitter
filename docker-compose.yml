@@ -18,8 +18,17 @@ services:
       - YTDLP_TWITTER_API=${YTDLP_TWITTER_API-graphql}
       - YTDLP_TWITTER_API_ORDER=${YTDLP_TWITTER_API_ORDER-graphql,legacy,syndication}
       - YTDLP_USER_AGENT=
+      # Telegram Bot API server configuration (optional - enables >50MB file uploads)
+      # Get these from https://my.telegram.org
+      - TELEGRAM_API_ID=${TELEGRAM_API_ID-}
+      - TELEGRAM_API_HASH=${TELEGRAM_API_HASH-}
+      - TELEGRAM_LOCAL_API_PORT=${TELEGRAM_LOCAL_API_PORT-8081}
     volumes:
       - ./data:/data:Z
+      - telegram-bot-api-data:/var/lib/telegram-bot-api:Z
     labels:
       - "traefik.enable=false"
       - "io.containers.autoupdate=registry"
+
+volumes:
+  telegram-bot-api-data:

@@ -1,3 +1,4 @@
+import asyncio
 import shutil
 import subprocess
 import os
@@ -12,15 +13,12 @@ from urllib.parse import urlparse
 
 import yt_dlp
 from dotenv import load_dotenv
-from telegram import Update
-from telegram.constants import ChatAction
-from telegram.ext import (
-    Application,
-    CommandHandler,
-    ContextTypes,
-    MessageHandler,
-    filters,
-)
+from aiogram import Bot, Dispatcher, F
+from aiogram.client.session.aiohttp import AiohttpSession
+from aiogram.client.telegram import TelegramAPIServer
+from aiogram.enums import ChatAction
+from aiogram.filters import Command
+from aiogram.types import Message, FSInputFile
 
 # Configure logging with highest verbosity
 logging.basicConfig(
@@ -32,10 +30,8 @@ logging.basicConfig(
 
 # Set all loggers to DEBUG
 logger = logging.getLogger(__name__)
-logging.getLogger("telegram").setLevel(logging.DEBUG)
-logging.getLogger("telegram.ext").setLevel(logging.DEBUG)
-logging.getLogger("httpx").setLevel(logging.DEBUG)
-logging.getLogger("httpcore").setLevel(logging.DEBUG)
+logging.getLogger("aiogram").setLevel(logging.DEBUG)
+logging.getLogger("aiohttp").setLevel(logging.DEBUG)
 logging.getLogger("yt_dlp").setLevel(logging.DEBUG)
 
 URL_RE = re.compile(r"https?://\S+")
@@ -277,21 +273,21 @@ def download_with_yt_dlp(url: str, output_dir: Path) -> Path:
     raise RuntimeError("Download failed")
 
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    logger.debug(f"Received /start command from update: {update}")
-    message = update.effective_message
-    if not message:
-        return
-    await message.reply_text(
+# Global bot instance (set in main)
+bot: Bot | None = None
+
+
+async def start_handler(message: Message) -> None:
+    logger.debug(f"Received /start command from message: {message}")
+    await message.answer(
         "Send me a URL and I will download it with yt-dlp and return the video."
     )
 
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    logger.debug(f"Received message update: {update}")
-    message = update.message
-    if not message:
-        logger.warning("No message in update")
+async def handle_message(message: Message) -> None:
+    logger.debug(f"Received message: {message}")
+    if not message.text:
+        logger.warning("No text in message")
         return
 
     allowlist = parse_allowlist()
@@ -299,22 +295,22 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     logger.debug(f"User ID: {user_id}, Allowlist: {allowlist}")
     if allowlist and (user_id is None or user_id not in allowlist):
         logger.warning(f"Access denied for user_id={user_id}")
-        await message.reply_text("Access denied.")
+        await message.answer("Access denied.")
         return
 
     urls = extract_urls(message.text)
     logger.debug(f"Extracted URLs: {urls}")
     if not urls:
-        await message.reply_text("No URL found. Send me a message with a link.")
+        await message.answer("No URL found. Send me a message with a link.")
         return
 
     for url in urls:
         logger.info(f"Processing URL: {url}")
-        status = await message.reply_text(f"Downloading: {url}")
-        
+        status = await message.answer(f"Downloading: {url}")
+
         try:
-            await context.bot.send_chat_action(
-                chat_id=message.chat_id, action=ChatAction.UPLOAD_VIDEO
+            await message.bot.send_chat_action(
+                chat_id=message.chat.id, action=ChatAction.UPLOAD_VIDEO
             )
 
             with tempfile.TemporaryDirectory(prefix="yt-dlp-") as tmp_dir:
@@ -328,21 +324,26 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
                 file_size = path.stat().st_size
                 logger.info(f"Sending video: {path} (size: {file_size} bytes)")
-                
-                # Telegram limit is 50MB for bots
-                if file_size > 50 * 1024 * 1024:
+
+                # With local Bot API server, we can send files up to 2000MB
+                # Check if using local API (no limit) or public API (50MB limit)
+                local_api_url = os.getenv("TELEGRAM_LOCAL_API_URL")
+                max_size = 2000 * 1024 * 1024 if local_api_url else 50 * 1024 * 1024
+                limit_text = "2000MB" if local_api_url else "50MB"
+
+                if file_size > max_size:
                     logger.warning(f"File too large for Telegram: {file_size} bytes")
-                    await status.edit_text(f"Video too large ({file_size // 1024 // 1024}MB > 50MB limit)")
-                    continue
-                
-                with path.open("rb") as video_file:
-                    await context.bot.send_video(
-                        chat_id=message.chat_id,
-                        video=video_file,
-                        read_timeout=120,
-                        write_timeout=120,
-                        connect_timeout=30,
+                    await status.edit_text(
+                        f"Video too large ({file_size // 1024 // 1024}MB > {limit_text} limit)"
                     )
+                    continue
+
+                # Use FSInputFile for aiogram
+                video_file = FSInputFile(path)
+                await message.bot.send_video(
+                    chat_id=message.chat.id,
+                    video=video_file,
+                )
                 await status.delete()
                 logger.info(f"Successfully sent video for URL: {url}")
         except Exception as exc:
@@ -353,36 +354,57 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 logger.error(f"Failed to edit status message: {edit_exc}")
 
 
-def main() -> None:
+async def main() -> None:
     load_dotenv()
-    logger.info("Starting Telegram Twitter Bot")
+    logger.info("Starting Telegram Twitter Bot (aiogram)")
     logger.debug(f"Environment: YTDLP_COOKIES_FILE={os.getenv('YTDLP_COOKIES_FILE')}")
     logger.debug(f"Environment: YTDLP_TWITTER_API={os.getenv('YTDLP_TWITTER_API')}")
     logger.debug(f"Environment: YTDLP_TWITTER_API_ORDER={os.getenv('YTDLP_TWITTER_API_ORDER')}")
     logger.debug(f"Environment: ALLOWLIST_USER_IDS={os.getenv('ALLOWLIST_USER_IDS')}")
+    logger.debug(f"Environment: TELEGRAM_LOCAL_API_URL={os.getenv('TELEGRAM_LOCAL_API_URL')}")
 
     token = os.getenv("BOT_TOKEN")
     if not token:
         logger.critical("BOT_TOKEN is not set")
         raise RuntimeError("BOT_TOKEN is not set")
 
-    logger.debug("Building application")
-    app = Application.builder().token(token).build()
+    # Configure session for local API server if specified
+    local_api_url = os.getenv("TELEGRAM_LOCAL_API_URL")
+    session = None
 
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    if local_api_url:
+        logger.info(f"Using local Telegram Bot API server: {local_api_url}")
+        # Create custom API server configuration for local server
+        api_server = TelegramAPIServer.from_base(local_api_url, is_local=True)
+        session = AiohttpSession(api=api_server)
 
-    # Graceful shutdown handler
+    logger.debug("Building bot instance")
+    global bot
+    bot = Bot(token=token, session=session)
+
+    # Create dispatcher
+    dp = Dispatcher()
+
+    # Register handlers
+    dp.message.register(start_handler, Command("start"))
+    dp.message.register(handle_message, F.text & ~F.text.startswith("/"))
+
+    # Graceful shutdown handling
+    loop = asyncio.get_event_loop()
+
     def signal_handler(signum, frame):
         logger.info(f"Received signal {signum}, shutting down gracefully...")
-        sys.exit(0)
+        loop.stop()
 
     signal.signal(signal.SIGTERM, signal_handler)
     signal.signal(signal.SIGINT, signal_handler)
 
     logger.info("Starting polling")
-    app.run_polling(drop_pending_updates=True)
+    try:
+        await dp.start_polling(bot, drop_pending_updates=True)
+    finally:
+        await bot.session.close()
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
