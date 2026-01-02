@@ -38,27 +38,29 @@ ENV PYTHONUNBUFFERED=1 \
     UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
     UV_PYTHON_DOWNLOADS=never \
-    PATH="/usr/local/bin:${PATH}"
+    PATH="/usr/local/bin:${PATH}" \
+    HOME=/workspace
 
 COPY --from=deno-bin /deno /usr/local/bin/deno
 COPY --from=ffmpeg-downloader /ffmpeg/bin/ffmpeg /usr/local/bin/ffmpeg
 COPY --from=ffmpeg-downloader /ffmpeg/bin/ffprobe /usr/local/bin/ffprobe
 
-WORKDIR /workspace
+WORKDIR /app
 
-COPY pyproject.toml /workspace/
+COPY pyproject.toml /app/
 RUN uv pip install --system -r pyproject.toml
 
-COPY main.py /workspace/
+COPY main.py /app/
 
-RUN useradd --create-home --uid 10001 --shell /usr/sbin/nologin app && \
-    chown -R app:app /workspace
+# Create non-root user and writable work directory for Podman rootless + SELinux
+RUN useradd --create-home --uid 1000 --shell /usr/sbin/nologin app && \
+    mkdir -p /workspace && \
+    chown -R 1000:1000 /app /workspace && \
+    chmod 755 /workspace
 
-ENV PUID=10001 \
-    PGID=10001
+VOLUME /workspace
 
-COPY entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh
+USER 1000
 
 # OCI-compliant signal handling (SIGTERM for graceful shutdown)
 STOPSIGNAL SIGTERM
@@ -66,5 +68,4 @@ STOPSIGNAL SIGTERM
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD python -c "import sys; sys.exit(0)"
 
-ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["python", "-u", "main.py"]

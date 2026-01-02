@@ -3,18 +3,19 @@ services:
     image: ghcr.io/mlshdev/telegram-twitter:latest
     restart: unless-stopped
     network_mode: "host"
+    user: "1000:1000"
+    security_opt:
+      - label=disable
     environment:
       - BOT_TOKEN=
       - ALLOWLIST_USER_IDS=
-      - PUID=1000
-      - PGID=1000
-      - YTDLP_COOKIES_FILE=/data/cookies.txt
+      - YTDLP_COOKIES_FILE=/workspace/cookies.txt
       - YTDLP_TWITTER_API=${YTDLP_TWITTER_API-graphql}
       - YTDLP_TWITTER_API_ORDER=${YTDLP_TWITTER_API_ORDER-graphql,legacy,syndication}
       - YTDLP_USER_AGENT=
       - YTDLP_FIX_ASPECT_RATIO=1
     volumes:
-      - ./cookies.txt:/data/cookies.txt:ro,Z
+      - ./workspace:/workspace:Z
     labels:
       - "traefik.enable=false"
       - "io.containers.autoupdate=registry"
