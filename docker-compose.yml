@@ -2,12 +2,24 @@
 # For Podman: podman-compose -f docker-compose.yml up -d
 # For Kubernetes: podman generate kube telegram-twitter > pod.yaml
 services:
+  telegram-bot-api:
+    image: aiogram/telegram-bot-api:latest
+    container_name: telegram-bot-api
+    restart: unless-stopped
+    environment:
+      TELEGRAM_API_ID: "${TELEGRAM_API_ID}"
+      TELEGRAM_API_HASH: "${TELEGRAM_API_HASH}"
+    volumes:
+      - telegram-bot-api-data:/var/lib/telegram-bot-api
+    ports:
+      - "8081:8081"
+
   telegram-twitter:
     image: ghcr.io/mlshdev/telegram-twitter:latest
     container_name: telegram-twitter
     restart: unless-stopped
-    network_mode: "host"
-    user: "1000:1000"
+    depends_on:
+      - telegram-bot-api
     # SELinux: use :Z for automatic relabeling (no label=disable needed)
     logging:
       driver: "json-file"
@@ -21,33 +33,10 @@ services:
       - YTDLP_TWITTER_API=${YTDLP_TWITTER_API-graphql}
       - YTDLP_TWITTER_API_ORDER=${YTDLP_TWITTER_API_ORDER-graphql,legacy,syndication}
       - YTDLP_USER_AGENT=
-      # Telegram Bot API server configuration (optional - enables >50MB file uploads)
-      # Get credentials from https://my.telegram.org (see https://core.telegram.org/api/obtaining_api_id)
-      - TELEGRAM_API_ID=${TELEGRAM_API_ID-}
-      - TELEGRAM_API_HASH=${TELEGRAM_API_HASH-}
-      # Server network configuration
-      - TELEGRAM_HTTP_PORT=${TELEGRAM_HTTP_PORT-8081}
-      # - TELEGRAM_HTTP_IP_ADDRESS=${TELEGRAM_HTTP_IP_ADDRESS-}  # Use "[::]" for IPv6
-      # Enable statistics HTTP endpoint on port 8082
-      # Usage: -e TELEGRAM_STAT=1 -p 8082:8082, then curl http://<host>:8082
-      # - TELEGRAM_STAT=${TELEGRAM_STAT-}
-      # Bot filtering: "<remainder>/<modulo>" - Allow only bots with 'bot_user_id % modulo == remainder'
-      # - TELEGRAM_FILTER=${TELEGRAM_FILTER-}
-      # Maximum webhook connections per bot
-      # - TELEGRAM_MAX_WEBHOOK_CONNECTIONS=${TELEGRAM_MAX_WEBHOOK_CONNECTIONS-}
-      # Log verbosity level (default: 2)
-      # - TELEGRAM_VERBOSITY=${TELEGRAM_VERBOSITY-2}
-      # Log file path (default: stdout/stderr)
-      # - TELEGRAM_LOG_FILE=${TELEGRAM_LOG_FILE-}
-      # Maximum number of open file descriptors
-      # - TELEGRAM_MAX_CONNECTIONS=${TELEGRAM_MAX_CONNECTIONS-}
-      # HTTP proxy for outgoing webhook requests (format: http://host:port)
-      # - TELEGRAM_PROXY=${TELEGRAM_PROXY-}
-      # Allow local requests (default: enabled when API_ID/HASH are set)
-      # - TELEGRAM_LOCAL=${TELEGRAM_LOCAL-1}
+      # Local Telegram Bot API server URL (points to telegram-bot-api service)
+      - TELEGRAM_LOCAL_API_URL=http://telegram-bot-api:8081
     volumes:
       - ./data:/data:Z
-      - telegram-bot-api-data:/var/lib/telegram-bot-api:Z
     labels:
       - "traefik.enable=false"
       - "io.containers.autoupdate=registry"
