@@ -15,3 +15,10 @@ cookies.twitter.txt
 cookies-twitter.txt
 cookies*
 uv.lock
+.pytest_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+.ruff_cache/

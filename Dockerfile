@@ -25,8 +25,8 @@ ARG BUILD_DATE
 ARG BUILD_VERSION
 
 # OCI annotations (compatible with Docker, Podman, and Kubernetes)
-LABEL org.opencontainers.image.title="Telegram Twitter Bot" \
-      org.opencontainers.image.description="Telegram bot for Twitter integration with Deno and Python" \
+LABEL org.opencontainers.image.title="Video Download API" \
+      org.opencontainers.image.description="FastAPI server for downloading videos using yt-dlp" \
       org.opencontainers.image.vendor="mlshdev" \
       org.opencontainers.image.licenses="MIT" \
       org.opencontainers.image.source="https://github.com/mlshdev/telegram-twitter" \
@@ -70,11 +70,14 @@ VOLUME /data
 
 USER 1000
 
+# Expose the API port
+EXPOSE 8000
+
 # OCI-compliant signal handling (SIGTERM for graceful shutdown)
 STOPSIGNAL SIGTERM
 
-# Healthcheck: check if we can reach the Telegram API
-HEALTHCHECK --interval=60s --timeout=10s --start-period=30s --retries=3 \
-  CMD python -c "import socket; s=socket.socket(); s.settimeout(5); s.connect((\"api.telegram.org\", 443)); s.close()"
+# Healthcheck: verify the API is responding
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+  CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"
 
 ENTRYPOINT ["/app/entrypoint.sh"]
