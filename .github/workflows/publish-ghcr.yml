@@ -59,6 +59,8 @@ jobs:
           else
             echo "version=${{ github.sha }}" >> "$GITHUB_OUTPUT"
           fi
+          # Generate ISO 8601 timestamp for OCI annotation
+          echo "timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 
       - name: Build and push by digest
         id: build
@@ -76,7 +78,7 @@ jobs:
           cache-to: type=gha,scope=build-${{ matrix.platform }},mode=max
           build-args: |
             BUILDKIT_INLINE_CACHE=1
-            BUILD_DATE=${{ github.event.head_commit.timestamp }}
+            BUILD_DATE=${{ steps.build_version.outputs.timestamp }}
             BUILD_VERSION=${{ steps.build_version.outputs.version }}
 
       - name: Export digest
