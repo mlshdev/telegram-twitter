@@ -1,11 +1,14 @@
+# Compose specification (compatible with Docker Compose and Podman)
+# For Podman: podman-compose -f docker-compose.yml up -d
+# For Kubernetes: podman generate kube telegram-twitter > pod.yaml
 services:
   telegram-twitter:
     image: ghcr.io/mlshdev/telegram-twitter:latest
+    container_name: telegram-twitter
     restart: unless-stopped
     network_mode: "host"
     user: "1000:1000"
-    security_opt:
-      - label=disable
+    # SELinux: use :Z for automatic relabeling (no label=disable needed)
     logging:
       driver: "json-file"
       options:

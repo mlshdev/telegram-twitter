@@ -50,6 +50,16 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
 
+      - name: Extract version for build args
+        id: build_version
+        run: |
+          MSG=$(git log -1 --format=%s)
+          if [[ "$MSG" =~ ^v([0-9]+\.[0-9]+\.[0-9]+) ]]; then
+            echo "version=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Build and push by digest
         id: build
         uses: docker/build-push-action@v6
@@ -66,6 +76,8 @@ jobs:
           cache-to: type=gha,scope=build-${{ matrix.platform }},mode=max
           build-args: |
             BUILDKIT_INLINE_CACHE=1
+            BUILD_DATE=${{ github.event.head_commit.timestamp }}
+            BUILD_VERSION=${{ steps.build_version.outputs.version }}
 
       - name: Export digest
         id: digest
@@ -97,12 +109,16 @@ jobs:
       - name: Extract version from commit message
         id: version
         run: |
-          MSG="${{ github.event.head_commit.message }}"
+          # Get first line of commit message using git (handles multiline properly)
+          MSG=$(git log -1 --format=%s)
+          echo "Commit subject: $MSG"
           if [[ "$MSG" =~ ^v([0-9]+\.[0-9]+\.[0-9]+) ]]; then
             echo "version=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
             echo "is_release=true" >> "$GITHUB_OUTPUT"
+            echo "Detected release version: ${BASH_REMATCH[1]}"
           else
             echo "is_release=false" >> "$GITHUB_OUTPUT"
+            echo "No version tag found in commit message"
           fi
 
       - name: Download digests

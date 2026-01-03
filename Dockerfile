@@ -45,15 +45,21 @@ RUN git clone --recursive --depth 1 https://github.com/tdlib/telegram-bot-api.gi
 
 FROM ghcr.io/astral-sh/uv:python3.14-trixie
 
+# Build arguments for OCI annotations
+ARG BUILD_DATE
+ARG BUILD_VERSION
+
 # OCI annotations (compatible with Docker, Podman, and Kubernetes)
-LABEL org.opencontainers.image.title="Telegram Twitter Bot"
-LABEL org.opencontainers.image.description="Telegram bot for Twitter integration with Deno, Python and local Telegram Bot API support"
-LABEL org.opencontainers.image.vendor="mlshdev"
-LABEL org.opencontainers.image.licenses="MIT"
-LABEL org.opencontainers.image.source="https://github.com/mlshdev/telegram-twitter"
-LABEL org.opencontainers.image.documentation="https://github.com/mlshdev/telegram-twitter/blob/main/README.md"
-LABEL org.opencontainers.image.url="https://github.com/mlshdev/telegram-twitter"
-LABEL org.opencontainers.image.base.name="ghcr.io/astral-sh/uv:python3.14-trixie"
+LABEL org.opencontainers.image.title="Telegram Twitter Bot" \
+      org.opencontainers.image.description="Telegram bot for Twitter integration with Deno, Python and local Telegram Bot API support" \
+      org.opencontainers.image.vendor="mlshdev" \
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.source="https://github.com/mlshdev/telegram-twitter" \
+      org.opencontainers.image.documentation="https://github.com/mlshdev/telegram-twitter/blob/main/README.md" \
+      org.opencontainers.image.url="https://github.com/mlshdev/telegram-twitter" \
+      org.opencontainers.image.base.name="ghcr.io/astral-sh/uv:python3.14-trixie" \
+      org.opencontainers.image.created="${BUILD_DATE}" \
+      org.opencontainers.image.version="${BUILD_VERSION}"
 
 # Explicit shell for OCI compliance
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
