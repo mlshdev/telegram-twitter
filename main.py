@@ -446,7 +446,6 @@ async def download_endpoint(
     logger.info(f"Download request: {url}")
 
     # Create temporary directory for download
-    # Using tempfile to ensure cleanup even on errors
     tmp_dir = tempfile.mkdtemp(prefix="ytdlp-api-")
     tmp_path = Path(tmp_dir)
 
@@ -454,13 +453,22 @@ async def download_endpoint(
         video_path = download_video(url, tmp_path)
 
         if not video_path.exists():
+            shutil.rmtree(tmp_path, ignore_errors=True)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Download completed but video file not found",
             )
 
         # Return file with appropriate headers for iOS
+        # Use background task to clean up temp directory after response is sent
         filename = video_path.name
+
+        def cleanup_temp_dir():
+            shutil.rmtree(tmp_path, ignore_errors=True)
+            logger.debug(f"Cleaned up temp directory: {tmp_path}")
+
+        from starlette.background import BackgroundTask
+
         return FileResponse(
             path=video_path,
             media_type="video/mp4",
@@ -469,8 +477,7 @@ async def download_endpoint(
                 "Content-Disposition": f'attachment; filename="{filename}"',
                 "X-Content-Type-Options": "nosniff",
             },
-            # FileResponse will delete the file after sending when
-            # background cleanup is used, but we manage our own cleanup
+            background=BackgroundTask(cleanup_temp_dir),
         )
 
     except HTTPException:
@@ -502,7 +509,3 @@ async def download_endpoint(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Download failed: {str(e)[:200]}",
         )
-
-
-# Note: Temp directory cleanup is handled by FileResponse background task
-# or in exception handlers above
