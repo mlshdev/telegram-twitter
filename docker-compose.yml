@@ -19,7 +19,8 @@ services:
     container_name: telegram-twitter
     restart: unless-stopped
     depends_on:
-      - telegram-bot-api
+      telegram-bot-api:
+        condition: service_started
     # SELinux: use :Z for automatic relabeling (no label=disable needed)
     logging:
       driver: "json-file"
