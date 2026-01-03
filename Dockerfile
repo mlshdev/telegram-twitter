@@ -18,31 +18,6 @@ RUN set -ex; \
     tar -xJf /tmp/ffmpeg.tar.xz -C /ffmpeg --strip-components=1 && \
     rm /tmp/ffmpeg.tar.xz
 
-# Telegram Bot API server builder stage
-# Use Debian to ensure binary compatibility with the final glibc-based image
-FROM docker.io/library/debian:trixie-slim AS telegram-bot-api-builder
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    git \
-    zlib1g-dev \
-    libssl-dev \
-    cmake \
-    gperf \
-    ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
-
-WORKDIR /build
-
-# Clone and build telegram-bot-api with TDLib
-RUN git clone --recursive --depth 1 https://github.com/tdlib/telegram-bot-api.git && \
-    cd telegram-bot-api && \
-    mkdir build && \
-    cd build && \
-    cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX:PATH=/usr/local .. && \
-    cmake --build . --target install -j $(nproc) && \
-    strip /usr/local/bin/telegram-bot-api
-
 FROM ghcr.io/astral-sh/uv:python3.14-trixie
 
 # Build arguments for OCI annotations
@@ -51,7 +26,7 @@ ARG BUILD_VERSION
 
 # OCI annotations (compatible with Docker, Podman, and Kubernetes)
 LABEL org.opencontainers.image.title="Telegram Twitter Bot" \
-      org.opencontainers.image.description="Telegram bot for Twitter integration with Deno, Python and local Telegram Bot API support" \
+      org.opencontainers.image.description="Telegram bot for Twitter integration with Deno and Python" \
       org.opencontainers.image.vendor="mlshdev" \
       org.opencontainers.image.licenses="MIT" \
       org.opencontainers.image.source="https://github.com/mlshdev/telegram-twitter" \
@@ -75,20 +50,12 @@ ENV PYTHONUNBUFFERED=1 \
 COPY --from=deno-bin /deno /usr/local/bin/deno
 COPY --from=ffmpeg-downloader /ffmpeg/bin/ffmpeg /usr/local/bin/ffmpeg
 COPY --from=ffmpeg-downloader /ffmpeg/bin/ffprobe /usr/local/bin/ffprobe
-COPY --from=telegram-bot-api-builder /usr/local/bin/telegram-bot-api /usr/local/bin/telegram-bot-api
-
-# Install runtime dependencies for telegram-bot-api
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libssl3 \
-    zlib1g \
-    netcat-openbsd \
-    && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user first for Podman rootless + SELinux
 RUN useradd --create-home --uid 1000 --home-dir /home/app --shell /usr/sbin/nologin app && \
-    mkdir -p /app /data /var/lib/telegram-bot-api && \
-    chown -R 1000:1000 /app /data /home/app /var/lib/telegram-bot-api && \
-    chmod 755 /data /var/lib/telegram-bot-api
+    mkdir -p /app /data && \
+    chown -R 1000:1000 /app /data /home/app && \
+    chmod 755 /data
 
 WORKDIR /app
 
@@ -100,19 +67,14 @@ COPY --chown=1000:1000 entrypoint.sh /app/
 RUN chmod +x /app/entrypoint.sh
 
 VOLUME /data
-VOLUME /var/lib/telegram-bot-api
 
 USER 1000
-
-# Expose Telegram Bot API server ports (8081 for API, 8082 for stats)
-EXPOSE 8081
-EXPOSE 8082
 
 # OCI-compliant signal handling (SIGTERM for graceful shutdown)
 STOPSIGNAL SIGTERM
 
-# Healthcheck: check if local API server is running (if enabled) or if we can reach public Telegram API
-HEALTHCHECK --interval=60s --timeout=10s --start-period=60s --retries=3 \
-  CMD bash -c 'if [ -n "$TELEGRAM_API_ID" ] && [ -n "$TELEGRAM_API_HASH" ]; then nc -z localhost ${TELEGRAM_HTTP_PORT:-8081}; else python -c "import socket; s=socket.socket(); s.settimeout(5); s.connect((\"api.telegram.org\", 443)); s.close()"; fi'
+# Healthcheck: check if we can reach the Telegram API
+HEALTHCHECK --interval=60s --timeout=10s --start-period=30s --retries=3 \
+  CMD python -c "import socket; s=socket.socket(); s.settimeout(5); s.connect((\"api.telegram.org\", 443)); s.close()"
 
 ENTRYPOINT ["/app/entrypoint.sh"]
