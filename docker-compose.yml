@@ -1,26 +1,38 @@
 # Compose specification (compatible with Docker Compose and Podman)
 # For Podman: podman-compose -f docker-compose.yml up -d
-# For Kubernetes: podman generate kube telegram-twitter > pod.yaml
-services:
-  telegram-bot-api:
-    image: aiogram/telegram-bot-api:latest
-    container_name: telegram-bot-api
-    restart: unless-stopped
-    environment:
-      TELEGRAM_API_ID: "${TELEGRAM_API_ID}"
-      TELEGRAM_API_HASH: "${TELEGRAM_API_HASH}"
-    volumes:
-      - telegram-bot-api-data:/var/lib/telegram-bot-api
-    ports:
-      - "8081:8081"
+# For Kubernetes: podman generate kube video-download-api > pod.yaml
 
-  telegram-twitter:
+services:
+  traefik:
+    image: docker.io/traefik:v3.3
+    container_name: traefik
+    restart: unless-stopped
+    command:
+      - "--api.dashboard=false"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      # Uncomment below for Let's Encrypt automatic HTTPS
+      # - "--certificatesresolvers.letsencrypt.acme.httpchallenge=true"
+      # - "--certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web"
+      # - "--certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL}"
+      # - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # - ./letsencrypt:/letsencrypt
+    networks:
+      - web
+
+  video-download-api:
     image: ghcr.io/mlshdev/telegram-twitter:latest
-    container_name: telegram-twitter
+    container_name: video-download-api
     restart: unless-stopped
     depends_on:
-      telegram-bot-api:
-        condition: service_started
+      - traefik
     # SELinux: use :Z for automatic relabeling (no label=disable needed)
     logging:
       driver: "json-file"
@@ -28,19 +40,39 @@ services:
         max-size: "50m"
         max-file: "5"
     environment:
-      - BOT_TOKEN=
-      - ALLOWLIST_USER_IDS=
+      # Auth tokens (comma-separated for multiple tokens)
+      - AUTH_TOKENS=${AUTH_TOKENS:-your-secret-token-here}
+      # API server configuration
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
+      - API_WORKERS=1
+      - API_LOG_LEVEL=info
+      # yt-dlp configuration
       - YTDLP_COOKIES_FILE=/data/cookies.txt
-      - YTDLP_TWITTER_API=${YTDLP_TWITTER_API-graphql}
-      - YTDLP_TWITTER_API_ORDER=${YTDLP_TWITTER_API_ORDER-graphql,legacy,syndication}
-      - YTDLP_USER_AGENT=
-      # Local Telegram Bot API server URL (points to telegram-bot-api service)
-      - TELEGRAM_LOCAL_API_URL=http://telegram-bot-api:8081
+      - YTDLP_TWITTER_API=${YTDLP_TWITTER_API:-graphql}
+      - YTDLP_TWITTER_API_ORDER=${YTDLP_TWITTER_API_ORDER:-graphql,legacy,syndication}
+      - YTDLP_USER_AGENT=${YTDLP_USER_AGENT:-}
+      # Optional: Custom format selection (default optimized for Apple QuickTime)
+      # - YTDLP_FORMAT=bestvideo[vcodec^=avc1]+bestaudio[acodec^=mp4a]/best
     volumes:
       - ./data:/data:Z
+    networks:
+      - web
     labels:
-      - "traefik.enable=false"
+      - "traefik.enable=true"
+      # HTTP router
+      - "traefik.http.routers.video-api.rule=Host(`${API_DOMAIN:-api.localhost}`)"
+      - "traefik.http.routers.video-api.entrypoints=web"
+      - "traefik.http.services.video-api.loadbalancer.server.port=8000"
+      # Uncomment for HTTPS with Let's Encrypt
+      # - "traefik.http.routers.video-api-secure.rule=Host(`${API_DOMAIN:-api.localhost}`)"
+      # - "traefik.http.routers.video-api-secure.entrypoints=websecure"
+      # - "traefik.http.routers.video-api-secure.tls.certresolver=letsencrypt"
+      # - "traefik.http.routers.video-api.middlewares=redirect-to-https"
+      # - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
+      # Podman auto-update label
       - "io.containers.autoupdate=registry"
 
-volumes:
-  telegram-bot-api-data:
+networks:
+  web:
+    driver: bridge
