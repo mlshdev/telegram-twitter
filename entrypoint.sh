@@ -83,11 +83,16 @@ if [ -n "$TELEGRAM_API_ID" ] && [ -n "$TELEGRAM_API_HASH" ]; then
     # Wait for the API server to be ready
     echo "Waiting for Telegram Bot API server to start..."
     for i in $(seq 1 30); do
+        # Check if the process is still running
+        if ! kill -0 "$BOT_API_PID" 2>/dev/null; then
+            echo "ERROR: Telegram Bot API server process exited unexpectedly"
+            exit 1
+        fi
         if nc -z localhost "$TELEGRAM_HTTP_PORT" 2>/dev/null; then
             echo "Telegram Bot API server is ready!"
             break
         fi
-        if [ $i -eq 30 ]; then
+        if [ "$i" -eq 30 ]; then
             echo "ERROR: Telegram Bot API server failed to start"
             exit 1
         fi
