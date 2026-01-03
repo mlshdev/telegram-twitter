@@ -19,16 +19,18 @@ RUN set -ex; \
     rm /tmp/ffmpeg.tar.xz
 
 # Telegram Bot API server builder stage
-FROM docker.io/library/alpine:latest AS telegram-bot-api-builder
+# Use Debian to ensure binary compatibility with the final glibc-based image
+FROM docker.io/library/debian:trixie-slim AS telegram-bot-api-builder
 
-RUN apk add --no-cache \
-    alpine-sdk \
-    linux-headers \
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
     git \
-    zlib-dev \
-    openssl-dev \
+    zlib1g-dev \
+    libssl-dev \
     cmake \
-    gperf
+    gperf \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
 
