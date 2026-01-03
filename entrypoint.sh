@@ -67,7 +67,15 @@ if [ -n "$TELEGRAM_API_ID" ] && [ -n "$TELEGRAM_API_HASH" ]; then
     # Add optional arguments based on environment variables
     [ "$TELEGRAM_LOCAL" != "0" ] && CMD_ARGS+=("--local")
     [ -n "$TELEGRAM_STAT" ] && CMD_ARGS+=("--http-stat-port=8082")
-    [ -n "$TELEGRAM_FILTER" ] && CMD_ARGS+=("--filter=$TELEGRAM_FILTER")
+    
+    # Validate TELEGRAM_FILTER format: must be "<remainder>/<modulo>" where both are integers and modulo > 0
+    if [ -n "$TELEGRAM_FILTER" ]; then
+        if [[ "$TELEGRAM_FILTER" =~ ^(0|[1-9][0-9]*)/[1-9][0-9]*$ ]]; then
+            CMD_ARGS+=("--filter=$TELEGRAM_FILTER")
+        else
+            echo "WARNING: TELEGRAM_FILTER='$TELEGRAM_FILTER' is invalid. Expected format: '<remainder>/<modulo>' (e.g., '0/2'). Ignoring."
+        fi
+    fi
     [ -n "$TELEGRAM_MAX_WEBHOOK_CONNECTIONS" ] && CMD_ARGS+=("--max-webhook-connections=$TELEGRAM_MAX_WEBHOOK_CONNECTIONS")
     [ -n "$TELEGRAM_LOG_FILE" ] && CMD_ARGS+=("--log=$TELEGRAM_LOG_FILE")
     [ -n "$TELEGRAM_MAX_CONNECTIONS" ] && CMD_ARGS+=("--max-connections=$TELEGRAM_MAX_CONNECTIONS")
