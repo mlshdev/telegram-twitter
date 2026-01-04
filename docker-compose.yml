@@ -60,13 +60,17 @@ services:
       - web
     labels:
       - "traefik.enable=true"
+      # Service definition (required for proper routing)
+      - "traefik.http.services.video-api.loadbalancer.server.port=8000"
       # HTTP router
       - "traefik.http.routers.video-api.rule=Host(`${API_DOMAIN:-api.localhost}`)"
       - "traefik.http.routers.video-api.entrypoints=web"
-      - "traefik.http.services.video-api.loadbalancer.server.port=8000"
+      - "traefik.http.routers.video-api.service=video-api"
       # Uncomment for HTTPS with Let's Encrypt
       # - "traefik.http.routers.video-api-secure.rule=Host(`${API_DOMAIN:-api.localhost}`)"
       # - "traefik.http.routers.video-api-secure.entrypoints=websecure"
+      # - "traefik.http.routers.video-api-secure.service=video-api"
+      # - "traefik.http.routers.video-api-secure.tls=true"
       # - "traefik.http.routers.video-api-secure.tls.certresolver=letsencrypt"
       # - "traefik.http.routers.video-api.middlewares=redirect-to-https"
       # - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"

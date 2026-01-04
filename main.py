@@ -399,18 +399,32 @@ async def lifespan(app: FastAPI):
     logger.info("Video Download API shutting down")
 
 
+APP_VERSION = "1.0.0"
+
+
 app = FastAPI(
     title="Video Download API",
     description="Download videos from various platforms in Apple QuickTime friendly format",
-    version="1.0.0",
+    version=APP_VERSION,
     lifespan=lifespan,
 )
+
+
+def _get_health_response() -> HealthResponse:
+    """Get health response - shared by root and health endpoints."""
+    return HealthResponse(status="healthy", version=APP_VERSION)
+
+
+@app.get("/", response_model=HealthResponse, tags=["Health"])
+async def root():
+    """Root endpoint - returns health status for reverse proxy compatibility."""
+    return _get_health_response()
 
 
 @app.get("/health", response_model=HealthResponse, tags=["Health"])
 async def health_check():
     """Health check endpoint for container orchestration."""
-    return HealthResponse(status="healthy", version="1.0.0")
+    return _get_health_response()
 
 
 @app.post(
