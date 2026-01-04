@@ -407,6 +407,12 @@ app = FastAPI(
 )
 
 
+@app.get("/", response_model=HealthResponse, tags=["Health"])
+async def root():
+    """Root endpoint - returns health status for reverse proxy compatibility."""
+    return HealthResponse(status="healthy", version="1.0.0")
+
+
 @app.get("/health", response_model=HealthResponse, tags=["Health"])
 async def health_check():
     """Health check endpoint for container orchestration."""

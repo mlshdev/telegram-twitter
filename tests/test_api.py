@@ -19,11 +19,19 @@ def client():
 
 
 class TestHealthEndpoint:
-    """Tests for the /health endpoint."""
+    """Tests for the /health and root endpoints."""
 
     def test_health_check(self, client):
         """Health endpoint returns correct status."""
         response = client.get("/health")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "healthy"
+        assert "version" in data
+
+    def test_root_endpoint(self, client):
+        """Root endpoint returns correct status for reverse proxy compatibility."""
+        response = client.get("/")
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "healthy"

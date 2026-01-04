@@ -55,6 +55,18 @@ curl -X POST http://localhost/download \
 
 ## API Reference
 
+### `GET /`
+
+Root endpoint - returns health status for reverse proxy compatibility.
+
+**Response:**
+```json
+{
+  "status": "healthy",
+  "version": "1.0.0"
+}
+```
+
 ### `GET /health`
 
 Health check endpoint for container orchestration.
@@ -321,6 +333,72 @@ docker buildx build --platform linux/amd64,linux/arm64 -t video-download-api .
 ## License
 
 MIT License - see LICENSE file for details.
+
+## Troubleshooting
+
+### Traefik Reverse Proxy 404 Errors
+
+If you get a 404 error when accessing the API through Traefik:
+
+1. **Verify the service is explicitly linked to the router**:
+   ```yaml
+   labels:
+     - "traefik.enable=true"
+     - "traefik.http.routers.ytdlp.rule=Host(`your-domain.com`)"
+     - "traefik.http.routers.ytdlp.entrypoints=websecure"
+     - "traefik.http.routers.ytdlp.service=ytdlp"  # Explicitly link router to service
+     - "traefik.http.routers.ytdlp.tls=true"
+     - "traefik.http.services.ytdlp.loadbalancer.server.port=8000"
+     - "traefik.docker.network=your-network"  # Must match Traefik's network
+   ```
+
+2. **Ensure network configuration is correct**:
+   - The container must be on the same Docker network as Traefik
+   - Use `traefik.docker.network=<network-name>` label to specify which network Traefik should use
+
+3. **Check entrypoints match your request**:
+   - If using HTTPS (port 443), the router must use `entrypoints=websecure`
+   - If using HTTP (port 80), the router must use `entrypoints=web`
+
+4. **Enable Traefik debug logging** to see why requests don't match:
+   ```yaml
+   command:
+     - "--log.level=DEBUG"
+   ```
+
+5. **Verify the API is accessible directly**:
+   ```bash
+   # Test directly (bypassing Traefik)
+   curl http://container-ip:8000/health
+   ```
+
+### Common Traefik Configuration for External Setup
+
+If running Traefik separately from the provided docker-compose.yml:
+
+```yaml
+video-download-api:
+  image: ghcr.io/mlshdev/telegram-twitter:latest
+  container_name: video-download-api
+  restart: unless-stopped
+  networks:
+    - proxy  # Same network as Traefik
+  environment:
+    - AUTH_TOKENS=your-secret-token
+    - API_PORT=8000
+  labels:
+    - "traefik.enable=true"
+    # Router configuration
+    - "traefik.http.routers.ytdlp.rule=Host(`ytdlp-api.yourdomain.com`)"
+    - "traefik.http.routers.ytdlp.entrypoints=websecure"
+    - "traefik.http.routers.ytdlp.service=ytdlp"
+    - "traefik.http.routers.ytdlp.tls=true"
+    - "traefik.http.routers.ytdlp.tls.certresolver=your-certresolver"
+    # Service configuration
+    - "traefik.http.services.ytdlp.loadbalancer.server.port=8000"
+    # Network specification (required when container is on multiple networks)
+    - "traefik.docker.network=proxy"
+```
 
 ## Acknowledgments
 
